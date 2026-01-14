@@ -1,0 +1,7 @@
+.venv/
+build/
+CMakeUserPresets.json
+.cache/
+.vscode/
+compile_commands.json
+docker-build/

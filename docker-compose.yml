@@ -1,0 +1,44 @@
+services:
+  base-build:
+    image: gst-plugins-rs:latest
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.rs
+    volumes:
+      - shared-source:/app
+
+  js-client:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.client
+    depends_on:
+      - base-build
+    network_mode: "host"
+    volumes:
+      - shared-source:/app
+
+  rs-signalling:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.signal
+    depends_on:
+      - base-build
+    network_mode: "host"
+    volumes:
+      - shared-source:/app
+
+  gst-env:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    depends_on:
+      - base-build
+    network_mode: "host"
+    volumes:
+      - .:/workspace
+    security_opt:
+      - seccomp:unconfined
+    shm_size: '2gb'
+
+volumes:
+  shared-source:
