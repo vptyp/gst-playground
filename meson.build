@@ -5,6 +5,10 @@ project('gstPlayground', 'cpp',
 # RUNPATH in combination with conan and transitive deps working strange
 add_project_link_arguments('-Wl,--disable-new-dtags', language: 'cpp')
 
+# Transitive dep on gflags when not passed by conan isn't correctly linked
+# it's possible to fix by directly showing dep on gflags, but... v
+add_project_link_arguments('-Wl,--copy-dt-needed-entries', language: 'cpp')
+
 glib_dep = dependency('glib-2.0', fallback: 'glib')
 gst_dep = dependency('gstreamer-1.0', fallback: 'gstreamer')
 glog_dep = dependency('libglog', required: true)

@@ -26,6 +26,7 @@ After that you will be inside the container and you can use `meson` and `ninja` 
 ```bash
 docker container exec -it gst-playground_gst-env_1 bash
 ## Inside the container
+. ~/py/bin/activate
 conan profile detect
 conan install . --build=missing -of docker-build -o *:shared=True -s compiler.cppstd=20
 meson setup docker-build --native-file ./docker-build/conan_meson_native.ini
