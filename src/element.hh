@@ -31,7 +31,7 @@ class Element {
   bool link(std::list<Element>::iterator begin,
             std::list<Element>::iterator end);
 
-  enum class PadTypes { Always, Sometime };
+  enum class PadTypes { Undefined, Always, Sometime };
 
  protected:
   friend Pipeline;  // pipeline can access any private field
@@ -39,7 +39,7 @@ class Element {
       nullptr};  // non-owned access
   std::string name{};
   std::string alias{};
-  PadTypes padType;
+  PadTypes padType{PadTypes::Undefined};
   bool owned{false};  // is it owned by a pipeline?
 };
 

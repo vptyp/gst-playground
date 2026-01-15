@@ -1,8 +1,9 @@
 #include "basePlayer.hh"
 
-#include <gst/gst.h>
-#include <format>
 #include <glog/logging.h>
+#include <gst/gst.h>
+
+#include <format>
 
 #include "element.hh"
 namespace vptyp {
@@ -14,7 +15,7 @@ void VideoPlayback::stop() { pipeline.stop(); }
 
 void VideoPlayback::create() {
   LOG(INFO) << std::format("location: {}", file.data());
-  
+
   Element filesrc = Element("filesrc", "filesrc");
   filesrc.object_set("location", file.data());
   pipeline.add_element(filesrc);
@@ -31,7 +32,7 @@ void VideoPlayback::create() {
   elements.push_back(std::move(videosink));
   auto res = filesrc.link(elements.begin(), elements.end());
 
-  if(!res) {
+  if (!res) {
     LOG(ERROR) << std::format("Linkage failed");
   }
 }

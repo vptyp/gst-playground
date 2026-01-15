@@ -1,7 +1,8 @@
-#include <string>
 #include <gtest/gtest.h>
-#include <pipeline.hh>
+
 #include <element.hh>
+#include <pipeline.hh>
+#include <string>
 
 static constexpr size_t test_timeout = 3;
 
@@ -10,7 +11,7 @@ TEST(SalutationTest, Static) {
 }
 
 TEST(MinPipeline, VideoTestSrc) {
-  GMainLoop *loop;
+  GMainLoop* loop;
   gst_init(nullptr, nullptr);
   loop = g_main_loop_new(NULL, FALSE);
 
@@ -23,6 +24,14 @@ TEST(MinPipeline, VideoTestSrc) {
   pipeline.play();
   sleep(test_timeout);
   pipeline.stop();
+}
+
+TEST(CrashTest, NoElement) {
+  GMainLoop* loop;
+  gst_init(nullptr, nullptr);
+  loop = g_main_loop_new(NULL, FALSE);
+  auto pipeline = vptyp::Pipeline(*loop, "base");
+  EXPECT_NO_FATAL_FAILURE(auto src = vptyp::Element("Crash", "src"));
 }
 
 int main() {

@@ -29,6 +29,12 @@ Element::Element(std::string_view element_name, std::string_view alias)
     : name(element_name), alias(alias) {
   this->element = decltype(element)(
       gst_element_factory_make(name.data(), alias.data()), {});
+
+  if (!this->element) {
+    LOG(ERROR) << std::format("element {} was not created", element_name);
+    return;
+  }
+
   this->padType = checkPadType(this->element.get());
   LOG(INFO) << std::format("element: {}; alias: {}; created: {}; padType: {}",
                            name, alias, uint64_t(element.get()),
@@ -44,7 +50,7 @@ Element::~Element() {
 
 bool Element::is_expired() { return !element && owned; }
 
-bool Element::is_initialised() { return element.get(); }
+bool Element::is_initialised() { return element.get() == nullptr; }
 
 bool Element::link(Element& element) {
   auto res = gst_element_link(this->element.get(), element.element.get());

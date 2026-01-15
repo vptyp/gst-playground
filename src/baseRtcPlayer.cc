@@ -6,9 +6,7 @@
 
 namespace vptyp {
 
-bool validate_ws(const std::string& wsUri) {
-    return true;
-}
+bool validate_ws(const std::string& wsUri) { return true; }
 
 BaseRTCPlayer::BaseRTCPlayer(GMainLoop& loop, const std::string& wsUri)
     : BasePlayer(), wsUri(wsUri), loop(loop), pipeline(loop, "BaseRTCPlayer") {}
@@ -22,7 +20,7 @@ void BaseRTCPlayer::create() {
                   "gst-plugins-rs is installed on the system";
   }
 
-  if(!validate_ws(wsUri)) {
+  if (!validate_ws(wsUri)) {
     LOG(FATAL) << "Web Socket uri is incorrect, please, verify";
   }
 

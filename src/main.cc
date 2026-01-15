@@ -12,7 +12,8 @@
 DEFINE_string(filename, "", "mp4 file path");
 DEFINE_string(url, "", "web URL to stream from");
 DEFINE_string(output, "", "output file path");
-DEFINE_string(webrtc, "", "provide uri for signalling server. E.g.: ws://127.0.0.1:8443");
+DEFINE_string(webrtc, "",
+              "provide uri for signalling server. E.g.: ws://127.0.0.1:8443");
 
 void loggerSetup(char* argv[]) {
   if (!std::filesystem::exists("logs") ||
@@ -33,9 +34,9 @@ int main(int argc, char* argv[]) {
   GMainLoop* loop = g_main_loop_new(NULL, FALSE);
 
   vptyp::Flags flags{.url = FLAGS_url,
-                    .filename = FLAGS_filename,
-                    .output = FLAGS_output,
-                    .wsUri = FLAGS_webrtc};
+                     .filename = FLAGS_filename,
+                     .output = FLAGS_output,
+                     .wsUri = FLAGS_webrtc};
 
   vptyp::init_flags(flags);
 
@@ -50,7 +51,7 @@ int main(int argc, char* argv[]) {
   player->play();
   g_main_loop_run(loop);
   player->stop();
-  
+
   g_main_loop_unref(loop);
   loop = NULL;
   return 0;
