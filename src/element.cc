@@ -50,7 +50,7 @@ Element::~Element() {
 
 bool Element::is_expired() { return !element && owned; }
 
-bool Element::is_initialised() { return element.get() == nullptr; }
+bool Element::is_initialised() { return element.get(); }
 
 bool Element::link(Element& element) {
   auto res = gst_element_link(this->element.get(), element.element.get());
