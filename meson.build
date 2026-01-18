@@ -19,8 +19,6 @@ libsrc = [
     'src/webPlayer.cc',
     'src/pipeline.cc',
     'src/baseRtcPlayer.cc',
-    'src/playerFactory.cc',
-    'src/flags.cc'
 ]
 
 deps = [
@@ -39,6 +37,8 @@ gstpp_dep = declare_dependency(
     dependencies: deps)
 
 src = [
+    'src/playerFactory.cc',
+    'src/flags.cc',
     'src/main.cc',
 ]
 
