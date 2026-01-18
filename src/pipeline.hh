@@ -2,7 +2,6 @@
 #include <gst/gst.h>
 
 #include <list>
-
 #include "element.hh"
 #include "glib.h"
 namespace vptyp {
@@ -18,9 +17,10 @@ class Pipeline {
 
  protected:
   static gboolean bus_call(GstBus* bus, GstMessage* msg, gpointer data);
+  gboolean bus_handler(GstBus* bus, GstMessage* msg);
 
  protected:
-  const GMainLoop& loop;
+  GMainLoop& loop;
   guint bus_watch_id;
   std::unique_ptr<GstElement, Deleter<GstElement>> pipeline{nullptr};
   std::list<Element> elements;  // owned elements

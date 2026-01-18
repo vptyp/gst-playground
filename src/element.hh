@@ -32,7 +32,8 @@ class Element {
             std::list<Element>::iterator end);
 
   enum class PadTypes { Undefined, Always, Sometime };
-
+ protected:
+  static void on_pad_added(GstElement* src, GstPad* new_pad, gpointer data);
  protected:
   friend Pipeline;  // pipeline can access any private field
   std::unique_ptr<GstElement, Deleter<GstElement>> element{
