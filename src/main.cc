@@ -31,7 +31,7 @@ int main(int argc, char* argv[]) {
   loggerSetup(argv);
   gst_init(&argc, &argv);
 
-  GMainLoop* loop = g_main_loop_new(NULL, FALSE);
+  GMainLoop* loop = g_main_loop_new(nullptr, false);
 
   vptyp::Flags flags{.url = FLAGS_url,
                      .filename = FLAGS_filename,
@@ -53,6 +53,6 @@ int main(int argc, char* argv[]) {
   player->stop();
 
   g_main_loop_unref(loop);
-  loop = NULL;
+  loop = nullptr;
   return 0;
 }
