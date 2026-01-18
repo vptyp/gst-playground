@@ -86,10 +86,24 @@ bool Element::link(Element& element) {
 
 Element::Element(Element&& other) {
   element = std::move(other.element);
-  name = other.name;
-  alias = other.alias;
+  std::swap(name, other.name);
+  std::swap(alias, other.alias);
+  std::swap(padType, other.padType);
+  std::swap(owned, other.owned);
+}
+
+Element& Element::operator=(Element&& other) {
+  if (this == &other) return *this;
+
+  element = std::move(other.element);
+  name = std::move(other.name);
+  alias = std::move(other.alias);
   padType = other.padType;
   owned = other.owned;
+
+  other.padType = PadTypes::Undefined;
+  other.owned = false;
+  return *this;
 }
 
 bool Element::link(std::list<Element>::iterator begin,

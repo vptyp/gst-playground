@@ -4,6 +4,7 @@
 #include <list>
 #include <memory>
 #include <string_view>
+#include <type_traits>
 
 #include "gst/gstelement.h"
 #include "gstDeleter.hh"
@@ -15,6 +16,9 @@ class Element {
  public:
   Element(std::string_view element_name, std::string_view alias);  // factory
   Element(Element&& other);
+  Element& operator=(Element&& other);
+  Element(Element& other) = delete;
+  Element& operator=(Element&) = delete;
   virtual ~Element();
 
   bool is_initialised();
@@ -22,6 +26,9 @@ class Element {
 
   template <typename... Args>
   void object_set(Args&&... properties);
+
+  template <typename ValueType>
+  ValueType object_get(std::string_view name) const;
 
   template <typename... Args>
   void child_proxy_set(Args&&... properties);
@@ -32,8 +39,10 @@ class Element {
             std::list<Element>::iterator end);
 
   enum class PadTypes { Undefined, Always, Sometime };
+
  protected:
   static void on_pad_added(GstElement* src, GstPad* new_pad, gpointer data);
+
  protected:
   friend Pipeline;  // pipeline can access any private field
   std::unique_ptr<GstElement, Deleter<GstElement>> element{
@@ -48,6 +57,16 @@ template <typename... Args>
 void Element::object_set(Args&&... properties) {
   g_object_set(G_OBJECT(element.get()), std::forward<Args>(properties)...,
                NULL);
+}
+
+template <typename ValueType>
+ValueType Element::object_get(std::string_view name) const {
+  static_assert(std::is_default_constructible<ValueType>::value,
+                "Type should be default constructible for object_get");
+
+  ValueType value{};
+  g_object_get(G_OBJECT(element.get()), name.data(), &value, nullptr);
+  return value;
 }
 
 template <typename... Args>
