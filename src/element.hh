@@ -1,6 +1,7 @@
 #pragma once
 #include <gst/gst.h>
 
+#include <functional>
 #include <list>
 #include <memory>
 #include <string_view>
@@ -41,7 +42,10 @@ class Element {
   enum class PadTypes { Undefined, Always, Sometime };
 
  protected:
-  static void on_pad_added(GstElement* src, GstPad* new_pad, gpointer data);
+  virtual bool on_pad_added(GstElement* src, GstPad* new_pad,
+                            GstElement* target);
+
+  virtual void handle_dynamic_pad(Element& element);
 
  protected:
   friend Pipeline;  // pipeline can access any private field

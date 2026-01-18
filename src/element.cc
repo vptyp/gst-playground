@@ -6,18 +6,20 @@
 #include <format>
 #include <string_view>
 
+#include "glib-object.h"
+
 namespace vptyp {
 
-void Element::on_pad_added(GstElement* src, GstPad* new_pad, gpointer data) {
-  auto target = static_cast<GstElement*>(data);
+bool Element::on_pad_added(GstElement* src, GstPad* new_pad,
+                           GstElement* target) {
   GstPad* sink_pad = gst_element_get_static_pad(target, "sink");
 
   // Check if the sink is already linked (e.g., if multiple pads are found)
   if (gst_pad_is_linked(sink_pad)) {
     g_object_unref(sink_pad);
-    return;
+    return true;
   }
-
+  bool state{false};
   // Check if the new pad's caps are compatible with the target
   GstPadLinkReturn ret = gst_pad_link(new_pad, sink_pad);
   if (GST_PAD_LINK_FAILED(ret)) {
@@ -26,9 +28,11 @@ void Element::on_pad_added(GstElement* src, GstPad* new_pad, gpointer data) {
   } else {
     LOG(INFO) << "Successfully linked dynamic pad to "
               << gst_element_get_name(target);
+    state = true;
   }
 
   g_object_unref(sink_pad);
+  return state;
 }
 
 Element::PadTypes checkPadType(GstElement* element) {
@@ -74,7 +78,35 @@ bool Element::is_expired() { return !element && owned; }
 
 bool Element::is_initialised() { return element.get(); }
 
+void Element::handle_dynamic_pad(Element& element) {
+  GstElement* target = element.element.get();
+  auto elementLambda = [this, target](GstElement* src, GstPad* pad,
+                                      gpointer data) {
+    this->on_pad_added(src, pad, target);
+  };
+  using LambdaType = decltype(elementLambda);
+  auto* lambdaPtr = new LambdaType(std::move(elementLambda));
+  g_signal_connect_data(
+      this->element.get(), "pad-added",
+      reinterpret_cast<void (*)()>(
+          +[](GstElement* src, GstPad* pad, gpointer data) {
+            auto* func = static_cast<LambdaType*>(data);
+            (*func)(src, pad, nullptr);
+          }),
+      lambdaPtr,
+      +[](gpointer data, GClosure* closure) {
+        delete static_cast<LambdaType*>(data);
+      },
+      GConnectFlags(0));
+  LOG(INFO) << "linkage would be dynamically handled";
+}
+
 bool Element::link(Element& element) {
+  if (padType == PadTypes::Sometime) {
+    handle_dynamic_pad(element);
+    return true;
+  }
+
   auto res = gst_element_link(this->element.get(), element.element.get());
   if (!res) {
     LOG(ERROR) << std::format("linkage of elements {} and {} unsuccessfull",
@@ -82,6 +114,23 @@ bool Element::link(Element& element) {
     return false;
   }
   return true;
+}
+
+bool Element::link(std::list<Element>::iterator begin,
+                   std::list<Element>::iterator end) {
+  if (begin == end) return true;
+  auto next = std::next(begin);
+
+  if (padType == PadTypes::Sometime) {
+    handle_dynamic_pad(*begin);
+    return begin->link(next, end);
+  }
+  if (!gst_element_link(this->element.get(), begin->element.get())) {
+    LOG(INFO) << std::format("Failed linkage of {} and {}", this->alias,
+                             begin->alias);
+    return false;
+  }
+  return begin->link(next, end);
 }
 
 Element::Element(Element&& other) {
@@ -105,23 +154,4 @@ Element& Element::operator=(Element&& other) {
   other.owned = false;
   return *this;
 }
-
-bool Element::link(std::list<Element>::iterator begin,
-                   std::list<Element>::iterator end) {
-  if (begin == end) return true;
-  auto next = std::next(begin);
-
-  if (padType == PadTypes::Sometime) {
-    g_signal_connect(this->element.get(), "pad-added", G_CALLBACK(on_pad_added),
-                     begin->element.get());
-    return begin->link(next, end);
-  }
-  if (!gst_element_link(this->element.get(), begin->element.get())) {
-    LOG(INFO) << std::format("Failed linkage of {} and {}", this->alias,
-                             begin->alias);
-    return false;
-  }
-  return begin->link(next, end);
-}
-
 }  // namespace vptyp
