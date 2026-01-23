@@ -2,7 +2,6 @@
 #include <gst/gst.h>
 
 #include <memory>
-class Element;
 
 template <typename T>
 struct Deleter {
