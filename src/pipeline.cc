@@ -10,7 +10,7 @@
 namespace vptyp {
 
 gboolean Pipeline::bus_handler(GstBus* bus, GstMessage* msg) {
-switch (GST_MESSAGE_TYPE(msg)) {
+  switch (GST_MESSAGE_TYPE(msg)) {
     case GST_MESSAGE_EOS: {
       g_print("End of stream\n");
       g_main_loop_quit(&loop);
@@ -21,9 +21,10 @@ switch (GST_MESSAGE_TYPE(msg)) {
       GError* error;
 
       gst_message_parse_error(msg, &error, &debug);
-      g_free(debug);
 
-      LOG(ERROR) << std::format("Error: {}", error->message);
+      LOG(ERROR) << std::format("Error: {}; Debug: {}", error->message,
+                                debug ? debug : "none");
+      g_free(debug);
       g_error_free(error);
 
       g_main_loop_quit(&loop);
@@ -36,7 +37,8 @@ switch (GST_MESSAGE_TYPE(msg)) {
       LOG(INFO) << std::format("err: {}, debug: {}", err->message, debug);
     }
     default:
-      LOG(INFO) << std::format("Received message of type {}", static_cast<int>(GST_MESSAGE_TYPE(msg)));
+      LOG(INFO) << std::format("Received message of type {}",
+                               static_cast<int>(GST_MESSAGE_TYPE(msg)));
       break;
   }
   return true;
@@ -58,7 +60,7 @@ Pipeline::Pipeline(GMainLoop& loop, std::string_view name) : loop(loop) {
   pipeline = make_gst(gst_pipeline_new(name.data()));
 
   auto gstBus = make_gst(gst_pipeline_get_bus(GST_PIPELINE(pipeline.get())));
-  
+
   bus_watch_id = gst_bus_add_watch(gstBus.get(), bus_call, this);
 }
 

@@ -50,8 +50,9 @@ class Element {
   virtual bool on_pad_added(GstElement* src, GstPad* new_pad,
                             GstElement* target);
 
-  virtual void handle_dynamic_pad(Element& element);
+  virtual void handle_dynamic_pad(GstElement* element);
   void reattach_probe();
+  void reattach_dynamic_pad_handler();
 
  protected:
   friend Pipeline;  // pipeline can access any private field
@@ -63,6 +64,8 @@ class Element {
   bool owned{false};  // is it owned by a pipeline?
   CapsCallback caps_callback_{nullptr};
   gulong probe_id_{0};
+  gulong pad_added_signal_id_{0};
+  GstElement* pending_dynamic_target_{nullptr};
 };
 
 template <typename... Args>

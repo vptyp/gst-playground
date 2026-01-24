@@ -13,6 +13,7 @@ namespace test {
 
 bool Element::on_pad_added(GstElement* src, GstPad* new_pad,
                            GstElement* target) {
+  LOG(INFO) << std::format("{}:{}", __func__, "called");
   EXPECT_TRUE(vptyp::Element::on_pad_added(src, new_pad, target));
   g_main_loop_quit(loop);
   return true;
@@ -82,22 +83,57 @@ TEST_F(ElementTest, ElementMoveSemantics) {
 
 TEST_F(ElementTest, DynamicPadElement) {
   vptyp::Pipeline pipeline(*loop, "heh");
-  test::Element src(loop, "videotestsrc", "src");
+  test::Element src(loop, "videotestsrc", "testsrc");
   test::Element decodebin(loop, "decodebin", "decodebin");
   EXPECT_TRUE(decodebin.is_initialised());
 
   // decodebin has SOMETIMES pads, which should be handled correctly
-  test::Element sink(loop, "fakesink", "sink");
+  test::Element sink(loop, "fakesink", "testsink");
   EXPECT_TRUE(sink.is_initialised());
-
-  src.link(decodebin);
-  decodebin.link(sink);
 
   pipeline.add_element(src);
   pipeline.add_element(decodebin);
   pipeline.add_element(sink);
 
+  src.link(decodebin);
+  decodebin.link(sink);
+
   pipeline.play();
+  auto waiter = std::async(std::launch::async, [this]() {
+    g_main_loop_run(loop);
+    return true;
+  });
+
+  std::future_status status = waiter.wait_for(std::chrono::milliseconds(1000));
+  if (status == std::future_status::timeout) {
+    g_main_loop_quit(loop);
+  }
+  pipeline.stop();
+
+  EXPECT_NE(status, std::future_status::timeout);
+}
+
+TEST_F(ElementTest, DynamicPadElementMove) {
+  vptyp::Pipeline pipeline(*loop, "pipeline");
+  test::Element src(loop, "videotestsrc", "testsrc");
+  test::Element decodebin(loop, "decodebin", "decodebin");
+  test::Element sink(loop, "fakesink", "testsink");
+
+  EXPECT_TRUE(decodebin.is_initialised());
+
+  pipeline.add_element(src);
+  pipeline.add_element(decodebin);
+  pipeline.add_element(sink);
+
+  src.link(decodebin);
+
+  // Move decodebin (the dynamic element)
+  test::Element moved_decodebin = std::move(decodebin);
+
+  moved_decodebin.link(sink);
+
+  pipeline.play();
+
   auto waiter = std::async(std::launch::async, [this]() {
     g_main_loop_run(loop);
     return true;

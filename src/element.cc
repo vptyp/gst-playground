@@ -124,15 +124,17 @@ void Element::set_caps_callback(Element::CapsCallback callback) {
   gst_object_unref(sink_pad);
 }
 
-void Element::handle_dynamic_pad(Element& element) {
-  GstElement* target = element.element.get();
+void Element::handle_dynamic_pad(GstElement* element) {
+  GstElement* target = element;
+  pending_dynamic_target_ = target;
+
   auto elementLambda = [this, target](GstElement* src, GstPad* pad,
                                       gpointer data) {
     this->on_pad_added(src, pad, target);
   };
   using LambdaType = decltype(elementLambda);
   auto* lambdaPtr = new LambdaType(std::move(elementLambda));
-  g_signal_connect_data(
+  pad_added_signal_id_ = g_signal_connect_data(
       this->element.get(), "pad-added",
       reinterpret_cast<void (*)()>(
           +[](GstElement* src, GstPad* pad, gpointer data) {
@@ -149,7 +151,7 @@ void Element::handle_dynamic_pad(Element& element) {
 
 bool Element::link(Element& element) {
   if (padType == PadTypes::Sometime) {
-    handle_dynamic_pad(element);
+    handle_dynamic_pad(element.element.get());
     return true;
   }
 
@@ -168,7 +170,7 @@ bool Element::link(std::list<Element>::iterator begin,
   auto next = std::next(begin);
 
   if (padType == PadTypes::Sometime) {
-    handle_dynamic_pad(*begin);
+    handle_dynamic_pad(begin->element.get());
     return begin->link(next, end);
   }
   if (!gst_element_link(this->element.get(), begin->element.get())) {
@@ -177,6 +179,36 @@ bool Element::link(std::list<Element>::iterator begin,
     return false;
   }
   return begin->link(next, end);
+}
+
+void Element::reattach_dynamic_pad_handler() {
+  if (pad_added_signal_id_ == 0 || !element || !pending_dynamic_target_) return;
+
+  // Disconnect old signal
+  g_signal_handler_disconnect(element.get(), pad_added_signal_id_);
+
+  // Create new lambda capturing current 'this' and preserved target
+  GstElement* target = pending_dynamic_target_;
+  auto elementLambda = [this, target](GstElement* src, GstPad* pad,
+                                      gpointer data) {
+    this->on_pad_added(src, pad, target);
+  };
+  using LambdaType = decltype(elementLambda);
+  auto* lambdaPtr = new LambdaType(std::move(elementLambda));
+
+  // Connect new signal
+  pad_added_signal_id_ = g_signal_connect_data(
+      this->element.get(), "pad-added",
+      reinterpret_cast<void (*)()>(
+          +[](GstElement* src, GstPad* pad, gpointer data) {
+            auto* func = static_cast<LambdaType*>(data);
+            (*func)(src, pad, nullptr);
+          }),
+      lambdaPtr,
+      +[](gpointer data, GClosure* closure) {
+        delete static_cast<LambdaType*>(data);
+      },
+      GConnectFlags(0));
 }
 
 void Element::reattach_probe() {
@@ -220,9 +252,14 @@ Element::Element(Element&& other) {
   std::swap(owned, other.owned);
   std::swap(caps_callback_, other.caps_callback_);
   std::swap(probe_id_, other.probe_id_);
+  std::swap(pad_added_signal_id_, other.pad_added_signal_id_);
+  std::swap(pending_dynamic_target_, other.pending_dynamic_target_);
 
   if (probe_id_ > 0) {
     reattach_probe();
+  }
+  if (pad_added_signal_id_ > 0) {
+    reattach_dynamic_pad_handler();
   }
 }
 
@@ -236,13 +273,20 @@ Element& Element::operator=(Element&& other) {
   owned = other.owned;
   caps_callback_ = std::move(other.caps_callback_);
   probe_id_ = other.probe_id_;
+  pad_added_signal_id_ = other.pad_added_signal_id_;
+  pending_dynamic_target_ = other.pending_dynamic_target_;
 
   other.padType = PadTypes::Undefined;
   other.owned = false;
   other.probe_id_ = 0;
+  other.pad_added_signal_id_ = 0;
+  other.pending_dynamic_target_ = nullptr;
 
   if (probe_id_ > 0) {
     reattach_probe();
+  }
+  if (pad_added_signal_id_ > 0) {
+    reattach_dynamic_pad_handler();
   }
 
   return *this;
