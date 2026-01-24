@@ -128,3 +128,78 @@ TEST_F(ElementTest, MultipleElementLinking) {
   EXPECT_TRUE(src.link(elements.begin(), elements.end()))
       << "Failed to link chain of elements";
 }
+
+TEST_F(ElementTest, CapsCallback) {
+  vptyp::Pipeline pipeline(*loop, "pipeline");
+  vptyp::Element src("videotestsrc", "src");
+  vptyp::Element convert("videoconvert", "convert");
+  vptyp::Element sink("fakesink", "sink");
+
+  sink.object_set("sync", FALSE);
+
+  bool callback_called = false;
+  sink.set_caps_callback([&callback_called, this](GstCaps* caps) {
+    callback_called = true;
+    char* caps_str = gst_caps_to_string(caps);
+    LOG(INFO) << caps_str;
+    g_free(caps_str);
+    g_main_loop_quit(loop);
+  });
+
+  pipeline.add_element(src);
+  pipeline.add_element(convert);
+  pipeline.add_element(sink);
+
+  ASSERT_TRUE(src.link(convert));
+  ASSERT_TRUE(convert.link(sink));
+
+  pipeline.play();
+
+  // Run loop with timeout
+  auto waiter =
+      std::async(std::launch::async, [this]() { g_main_loop_run(loop); });
+
+  if (waiter.wait_for(std::chrono::seconds(2)) == std::future_status::timeout) {
+    g_main_loop_quit(loop);
+  }
+
+  pipeline.stop();
+  EXPECT_TRUE(callback_called);
+}
+
+TEST_F(ElementTest, CapsCallbackMove) {
+  vptyp::Pipeline pipeline(*loop, "pipeline");
+  vptyp::Element src("videotestsrc", "src");
+  vptyp::Element convert("videoconvert", "convert");
+  vptyp::Element sink("fakesink", "sink");
+
+  sink.object_set("sync", FALSE);
+
+  bool callback_called = false;
+  sink.set_caps_callback([&callback_called, this](GstCaps* caps) {
+    callback_called = true;
+    g_main_loop_quit(loop);
+  });
+
+  // Move sink
+  vptyp::Element moved_sink = std::move(sink);
+
+  pipeline.add_element(src);
+  pipeline.add_element(convert);
+  pipeline.add_element(moved_sink);
+
+  ASSERT_TRUE(src.link(convert));
+  ASSERT_TRUE(convert.link(moved_sink));
+
+  pipeline.play();
+
+  auto waiter =
+      std::async(std::launch::async, [this]() { g_main_loop_run(loop); });
+
+  if (waiter.wait_for(std::chrono::seconds(2)) == std::future_status::timeout) {
+    g_main_loop_quit(loop);
+  }
+
+  pipeline.stop();
+  EXPECT_TRUE(callback_called);
+}

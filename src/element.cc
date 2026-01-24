@@ -78,6 +78,52 @@ bool Element::is_expired() { return !element && owned; }
 
 bool Element::is_initialised() { return element.get(); }
 
+GstPadProbeReturn Element::on_sink_pad_probe(GstPad* pad,
+                                             GstPadProbeInfo* info) {
+  if (GST_PAD_PROBE_INFO_TYPE(info) & GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM) {
+    GstEvent* event = GST_PAD_PROBE_INFO_EVENT(info);
+
+    if (GST_EVENT_TYPE(event) == GST_EVENT_CAPS) {
+      GstCaps* caps = nullptr;
+      gst_event_parse_caps(event, &caps);
+      if (caps && caps_callback_) {
+        caps_callback_(caps);
+      }
+    }
+  }
+  return GST_PAD_PROBE_OK;
+}
+
+void Element::set_caps_callback(Element::CapsCallback callback) {
+  caps_callback_ = std::move(callback);
+  if (probe_id_ > 0) return;
+
+  auto sink_pad = gst_element_get_static_pad(element.get(), "sink");
+  if (!sink_pad) {
+    LOG(WARNING) << "Element " << name << " has no static sink pad";
+    return;
+  }
+
+  auto probeLambda = [this](GstPad* pad, GstPadProbeInfo* info) {
+    return this->on_sink_pad_probe(pad, info);
+  };
+  using LambdaType = decltype(probeLambda);
+  auto* lambdaPtr = new LambdaType(std::move(probeLambda));
+
+  probe_id_ = gst_pad_add_probe(
+      sink_pad, GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM,
+      (GstPadProbeCallback)(+[](GstPad* pad, GstPadProbeInfo* info,
+                                gpointer user_data) -> GstPadProbeReturn {
+        auto* func = static_cast<LambdaType*>(user_data);
+        return (*func)(pad, info);
+      }),
+      lambdaPtr, (GDestroyNotify)(+[](gpointer data) {
+        delete static_cast<LambdaType*>(data);
+      }));
+
+  gst_object_unref(sink_pad);
+}
+
 void Element::handle_dynamic_pad(Element& element) {
   GstElement* target = element.element.get();
   auto elementLambda = [this, target](GstElement* src, GstPad* pad,
@@ -133,12 +179,51 @@ bool Element::link(std::list<Element>::iterator begin,
   return begin->link(next, end);
 }
 
+void Element::reattach_probe() {
+  if (probe_id_ == 0 || !element) return;
+
+  GstPad* sink_pad = gst_element_get_static_pad(element.get(), "sink");
+  if (sink_pad) {
+    // Remove the old probe (which triggers its destroy notify)
+    gst_pad_remove_probe(sink_pad, probe_id_);
+
+    // Create new lambda capturing current 'this'
+    auto probeLambda = [this](GstPad* pad, GstPadProbeInfo* info) {
+      return this->on_sink_pad_probe(pad, info);
+    };
+    using LambdaType = decltype(probeLambda);
+    auto* lambdaPtr = new LambdaType(std::move(probeLambda));
+
+    // Attach new probe
+    probe_id_ = gst_pad_add_probe(
+        sink_pad, GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM,
+        (GstPadProbeCallback)(+[](GstPad* pad, GstPadProbeInfo* info,
+                                  gpointer user_data) -> GstPadProbeReturn {
+          auto* func = static_cast<LambdaType*>(user_data);
+          return (*func)(pad, info);
+        }),
+        lambdaPtr, (GDestroyNotify)(+[](gpointer data) {
+          delete static_cast<LambdaType*>(data);
+        }));
+
+    gst_object_unref(sink_pad);
+  } else {
+    probe_id_ = 0;
+  }
+}
+
 Element::Element(Element&& other) {
   element = std::move(other.element);
   std::swap(name, other.name);
   std::swap(alias, other.alias);
   std::swap(padType, other.padType);
   std::swap(owned, other.owned);
+  std::swap(caps_callback_, other.caps_callback_);
+  std::swap(probe_id_, other.probe_id_);
+
+  if (probe_id_ > 0) {
+    reattach_probe();
+  }
 }
 
 Element& Element::operator=(Element&& other) {
@@ -149,9 +234,17 @@ Element& Element::operator=(Element&& other) {
   alias = std::move(other.alias);
   padType = other.padType;
   owned = other.owned;
+  caps_callback_ = std::move(other.caps_callback_);
+  probe_id_ = other.probe_id_;
 
   other.padType = PadTypes::Undefined;
   other.owned = false;
+  other.probe_id_ = 0;
+
+  if (probe_id_ > 0) {
+    reattach_probe();
+  }
+
   return *this;
 }
 }  // namespace vptyp

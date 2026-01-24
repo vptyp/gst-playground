@@ -39,13 +39,19 @@ class Element {
   bool link(std::list<Element>::iterator begin,
             std::list<Element>::iterator end);
 
+  using CapsCallback = std::function<void(GstCaps*)>;
+  void set_caps_callback(CapsCallback callback);
+
   enum class PadTypes { Undefined, Always, Sometime };
 
  protected:
+  virtual GstPadProbeReturn on_sink_pad_probe(GstPad* pad,
+                                              GstPadProbeInfo* info);
   virtual bool on_pad_added(GstElement* src, GstPad* new_pad,
                             GstElement* target);
 
   virtual void handle_dynamic_pad(Element& element);
+  void reattach_probe();
 
  protected:
   friend Pipeline;  // pipeline can access any private field
@@ -55,6 +61,8 @@ class Element {
   std::string alias{};
   PadTypes padType{PadTypes::Undefined};
   bool owned{false};  // is it owned by a pipeline?
+  CapsCallback caps_callback_{nullptr};
+  gulong probe_id_{0};
 };
 
 template <typename... Args>
