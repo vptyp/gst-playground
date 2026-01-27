@@ -20,16 +20,16 @@ bool Element::on_pad_added(GstElement* src, GstPad* new_pad,
     return true;
   }
   bool state{false};
+  auto name = gst_element_get_name(target);
   // Check if the new pad's caps are compatible with the target
   GstPadLinkReturn ret = gst_pad_link(new_pad, sink_pad);
   if (GST_PAD_LINK_FAILED(ret)) {
-    LOG(ERROR) << "Failed to link dynamic pad to "
-               << gst_element_get_name(target);
+    LOG(ERROR) << "Failed to link dynamic pad to " << name;
   } else {
-    LOG(INFO) << "Successfully linked dynamic pad to "
-              << gst_element_get_name(target);
+    LOG(INFO) << "Successfully linked dynamic pad to " << name;
     state = true;
   }
+  g_free(name);
 
   g_object_unref(sink_pad);
   return state;
@@ -51,29 +51,6 @@ Element::PadTypes checkPadType(GstElement* element) {
   return is_dynamic;
 }
 
-Element::Element(std::string_view element_name, std::string_view alias)
-    : name(element_name), alias(alias) {
-  this->element = decltype(element)(
-      gst_element_factory_make(name.data(), alias.data()), {});
-
-  if (!this->element) {
-    LOG(ERROR) << std::format("element {} was not created", element_name);
-    return;
-  }
-
-  this->padType = checkPadType(this->element.get());
-  LOG(INFO) << std::format("element: {}; alias: {}; created: {}; padType: {}",
-                           name, alias, uint64_t(element.get()),
-                           static_cast<int>(this->padType));
-}
-
-Element::~Element() {
-  if (owned) {
-    void* ptr = element.release();
-    (void)ptr;
-  }
-}
-
 bool Element::is_expired() { return !element && owned; }
 
 bool Element::is_initialised() { return element.get(); }
@@ -86,32 +63,23 @@ GstPadProbeReturn Element::on_sink_pad_probe(GstPad* pad,
     if (GST_EVENT_TYPE(event) == GST_EVENT_CAPS) {
       GstCaps* caps = nullptr;
       gst_event_parse_caps(event, &caps);
-      if (caps && caps_callback_) {
-        caps_callback_(caps);
+      if (caps && capsCallback) {
+        capsCallback(caps);
       }
     }
   }
   return GST_PAD_PROBE_OK;
 }
 
-void Element::set_caps_callback(Element::CapsCallback callback) {
-  caps_callback_ = std::move(callback);
-  if (probe_id_ > 0) return;
-
-  auto sink_pad = gst_element_get_static_pad(element.get(), "sink");
-  if (!sink_pad) {
-    LOG(WARNING) << "Element " << name << " has no static sink pad";
-    return;
-  }
-
+void Element::add_caps_probe(GstPad* pad) {
   auto probeLambda = [this](GstPad* pad, GstPadProbeInfo* info) {
     return this->on_sink_pad_probe(pad, info);
   };
   using LambdaType = decltype(probeLambda);
   auto* lambdaPtr = new LambdaType(std::move(probeLambda));
 
-  probe_id_ = gst_pad_add_probe(
-      sink_pad, GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM,
+  probeId = gst_pad_add_probe(
+      pad, GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM,
       (GstPadProbeCallback)(+[](GstPad* pad, GstPadProbeInfo* info,
                                 gpointer user_data) -> GstPadProbeReturn {
         auto* func = static_cast<LambdaType*>(user_data);
@@ -120,13 +88,41 @@ void Element::set_caps_callback(Element::CapsCallback callback) {
       lambdaPtr, (GDestroyNotify)(+[](gpointer data) {
         delete static_cast<LambdaType*>(data);
       }));
+}
 
+void Element::set_caps_callback(Element::CapsCallback callback) {
+  capsCallback = std::move(callback);
+  if (probeId > 0) return;
+
+  GstPad* sink_pad = gst_element_get_static_pad(element.get(), "sink");
+  if (!sink_pad) {
+    LOG(WARNING) << "Element " << name << " has no static sink pad";
+    return;
+  }
+
+  add_caps_probe(sink_pad);
   gst_object_unref(sink_pad);
+}
+
+void Element::reattach_probe() {
+  if (probeId == 0 || !element) return;
+
+  GstPad* sink_pad = gst_element_get_static_pad(element.get(), "sink");
+  if (sink_pad) {
+    // Remove the old probe (which triggers its destroy notify)
+    gst_pad_remove_probe(sink_pad, probeId);
+
+    add_caps_probe(sink_pad);
+
+    gst_object_unref(sink_pad);
+  } else {
+    probeId = 0;
+  }
 }
 
 void Element::handle_dynamic_pad(GstElement* element) {
   GstElement* target = element;
-  pending_dynamic_target_ = target;
+  pendingDynamicTarget = target;
 
   auto elementLambda = [this, target](GstElement* src, GstPad* pad,
                                       gpointer data) {
@@ -134,7 +130,8 @@ void Element::handle_dynamic_pad(GstElement* element) {
   };
   using LambdaType = decltype(elementLambda);
   auto* lambdaPtr = new LambdaType(std::move(elementLambda));
-  pad_added_signal_id_ = g_signal_connect_data(
+
+  padAddedSignalId = g_signal_connect_data(
       this->element.get(), "pad-added",
       reinterpret_cast<void (*)()>(
           +[](GstElement* src, GstPad* pad, gpointer data) {
@@ -146,7 +143,17 @@ void Element::handle_dynamic_pad(GstElement* element) {
         delete static_cast<LambdaType*>(data);
       },
       GConnectFlags(0));
+
   LOG(INFO) << "linkage would be dynamically handled";
+}
+
+void Element::reattach_dynamic_pad_handler() {
+  if (padAddedSignalId == 0 || !element || !pendingDynamicTarget) return;
+
+  // Disconnect old signal
+  g_signal_handler_disconnect(element.get(), padAddedSignalId);
+
+  handle_dynamic_pad(pendingDynamicTarget);
 }
 
 bool Element::link(Element& element) {
@@ -181,67 +188,32 @@ bool Element::link(std::list<Element>::iterator begin,
   return begin->link(next, end);
 }
 
-void Element::reattach_dynamic_pad_handler() {
-  if (pad_added_signal_id_ == 0 || !element || !pending_dynamic_target_) return;
+Element::Element(std::string_view element_name, std::string_view alias)
+    : name(element_name), alias(alias) {
+  this->element = decltype(element)(
+      gst_element_factory_make(name.data(), alias.data()), {});
 
-  // Disconnect old signal
-  g_signal_handler_disconnect(element.get(), pad_added_signal_id_);
+  if (!this->element) {
+    LOG(ERROR) << std::format("element {} was not created", element_name);
+    return;
+  }
 
-  // Create new lambda capturing current 'this' and preserved target
-  GstElement* target = pending_dynamic_target_;
-  auto elementLambda = [this, target](GstElement* src, GstPad* pad,
-                                      gpointer data) {
-    this->on_pad_added(src, pad, target);
-  };
-  using LambdaType = decltype(elementLambda);
-  auto* lambdaPtr = new LambdaType(std::move(elementLambda));
-
-  // Connect new signal
-  pad_added_signal_id_ = g_signal_connect_data(
-      this->element.get(), "pad-added",
-      reinterpret_cast<void (*)()>(
-          +[](GstElement* src, GstPad* pad, gpointer data) {
-            auto* func = static_cast<LambdaType*>(data);
-            (*func)(src, pad, nullptr);
-          }),
-      lambdaPtr,
-      +[](gpointer data, GClosure* closure) {
-        delete static_cast<LambdaType*>(data);
-      },
-      GConnectFlags(0));
+  this->padType = checkPadType(this->element.get());
+  LOG(INFO) << std::format("element: {}; alias: {}; created: {}; padType: {}",
+                           name, alias, uint64_t(element.get()),
+                           static_cast<int>(this->padType));
 }
 
-void Element::reattach_probe() {
-  if (probe_id_ == 0 || !element) return;
-
-  GstPad* sink_pad = gst_element_get_static_pad(element.get(), "sink");
-  if (sink_pad) {
-    // Remove the old probe (which triggers its destroy notify)
-    gst_pad_remove_probe(sink_pad, probe_id_);
-
-    // Create new lambda capturing current 'this'
-    auto probeLambda = [this](GstPad* pad, GstPadProbeInfo* info) {
-      return this->on_sink_pad_probe(pad, info);
-    };
-    using LambdaType = decltype(probeLambda);
-    auto* lambdaPtr = new LambdaType(std::move(probeLambda));
-
-    // Attach new probe
-    probe_id_ = gst_pad_add_probe(
-        sink_pad, GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM,
-        (GstPadProbeCallback)(+[](GstPad* pad, GstPadProbeInfo* info,
-                                  gpointer user_data) -> GstPadProbeReturn {
-          auto* func = static_cast<LambdaType*>(user_data);
-          return (*func)(pad, info);
-        }),
-        lambdaPtr, (GDestroyNotify)(+[](gpointer data) {
-          delete static_cast<LambdaType*>(data);
-        }));
-
-    gst_object_unref(sink_pad);
-  } else {
-    probe_id_ = 0;
+Element::~Element() {
+  if (owned) {
+    void* ptr = element.release();
+    (void)ptr;
   }
+
+  if (padAddedSignalId > 0)
+    g_signal_handler_disconnect(element.get(), padAddedSignalId);
+
+  if (probeId > 0) g_signal_handler_disconnect(element.get(), probeId);
 }
 
 Element::Element(Element&& other) {
@@ -250,15 +222,15 @@ Element::Element(Element&& other) {
   std::swap(alias, other.alias);
   std::swap(padType, other.padType);
   std::swap(owned, other.owned);
-  std::swap(caps_callback_, other.caps_callback_);
-  std::swap(probe_id_, other.probe_id_);
-  std::swap(pad_added_signal_id_, other.pad_added_signal_id_);
-  std::swap(pending_dynamic_target_, other.pending_dynamic_target_);
+  std::swap(capsCallback, other.capsCallback);
+  std::swap(probeId, other.probeId);
+  std::swap(padAddedSignalId, other.padAddedSignalId);
+  std::swap(pendingDynamicTarget, other.pendingDynamicTarget);
 
-  if (probe_id_ > 0) {
+  if (probeId > 0) {
     reattach_probe();
   }
-  if (pad_added_signal_id_ > 0) {
+  if (padAddedSignalId > 0) {
     reattach_dynamic_pad_handler();
   }
 }
@@ -271,21 +243,21 @@ Element& Element::operator=(Element&& other) {
   alias = std::move(other.alias);
   padType = other.padType;
   owned = other.owned;
-  caps_callback_ = std::move(other.caps_callback_);
-  probe_id_ = other.probe_id_;
-  pad_added_signal_id_ = other.pad_added_signal_id_;
-  pending_dynamic_target_ = other.pending_dynamic_target_;
+  capsCallback = std::move(other.capsCallback);
+  probeId = other.probeId;
+  padAddedSignalId = other.padAddedSignalId;
+  pendingDynamicTarget = other.pendingDynamicTarget;
 
   other.padType = PadTypes::Undefined;
   other.owned = false;
-  other.probe_id_ = 0;
-  other.pad_added_signal_id_ = 0;
-  other.pending_dynamic_target_ = nullptr;
+  other.probeId = 0;
+  other.padAddedSignalId = 0;
+  other.pendingDynamicTarget = nullptr;
 
-  if (probe_id_ > 0) {
+  if (probeId > 0) {
     reattach_probe();
   }
-  if (pad_added_signal_id_ > 0) {
+  if (padAddedSignalId > 0) {
     reattach_dynamic_pad_handler();
   }
 

@@ -11,6 +11,7 @@ add_project_link_arguments('-Wl,--copy-dt-needed-entries', language: 'cpp')
 
 glib_dep = dependency('glib-2.0', fallback: 'glib')
 gst_dep = dependency('gstreamer-1.0', fallback: 'gstreamer')
+gst_app_dep = dependency('gstreamer-app-1.0', version : '>= 1.0.0')
 glog_dep = dependency('libglog', required: true)
 
 libsrc = [
@@ -19,12 +20,14 @@ libsrc = [
     'src/webPlayer.cc',
     'src/pipeline.cc',
     'src/baseRtcPlayer.cc',
+    'src/appSink.cc'
 ]
 
 deps = [
     glib_dep,
     gst_dep,
-    glog_dep]
+    glog_dep,
+    gst_app_dep]
 
 gstpp = library('gstpp',
     sources: libsrc,

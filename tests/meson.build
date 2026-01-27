@@ -7,13 +7,14 @@ element_test_src = [
     'element_test.cc',
     'integration_test.cc',
     'pipeline_test.cc',
+    'appsink_test.cc',
     'logger.cc'
 ]
 
 element_test_exe = executable(
     'element_test_exe',
     sources: element_test_src,
-    dependencies: [gtest_dep, gtest_main_dep, gstpp_dep],
+    dependencies: [gtest_dep, gtest_main_dep, gstpp_dep, gst_app_dep],
     include_directories: [test_inc],
 )
 

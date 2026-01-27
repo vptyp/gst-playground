@@ -51,6 +51,7 @@ class Element {
                             GstElement* target);
 
   virtual void handle_dynamic_pad(GstElement* element);
+  void add_caps_probe(GstPad* pad);
   void reattach_probe();
   void reattach_dynamic_pad_handler();
 
@@ -60,12 +61,12 @@ class Element {
       nullptr};  // non-owned access
   std::string name{};
   std::string alias{};
+  CapsCallback capsCallback{nullptr};
+  gulong probeId{0};
+  gulong padAddedSignalId{0};
+  GstElement* pendingDynamicTarget{nullptr};
   PadTypes padType{PadTypes::Undefined};
   bool owned{false};  // is it owned by a pipeline?
-  CapsCallback caps_callback_{nullptr};
-  gulong probe_id_{0};
-  gulong pad_added_signal_id_{0};
-  GstElement* pending_dynamic_target_{nullptr};
 };
 
 template <typename... Args>

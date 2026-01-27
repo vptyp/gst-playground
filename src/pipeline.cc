@@ -37,8 +37,9 @@ gboolean Pipeline::bus_handler(GstBus* bus, GstMessage* msg) {
       LOG(INFO) << std::format("err: {}, debug: {}", err->message, debug);
     }
     default:
-      LOG(INFO) << std::format("Received message of type {}",
-                               static_cast<int>(GST_MESSAGE_TYPE(msg)));
+      LOG(INFO) << std::format(
+          "Received message of type {}",
+          gst_message_type_get_name((GST_MESSAGE_TYPE(msg))));
       break;
   }
   return true;

@@ -12,6 +12,15 @@ struct Deleter {
   }
 };
 
+template <>
+struct Deleter<GstSample> {
+  void operator()(GstSample* element) {
+    if (element) {
+      gst_sample_unref(element);
+    }
+  }
+};
+
 template <typename T>
 std::unique_ptr<T, Deleter<T>> make_gst(T* obj) {
   return {obj, Deleter<T>()};
