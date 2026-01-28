@@ -3,6 +3,7 @@
 #include <glog/logging.h>
 #include <gst/gst.h>
 
+#include <algorithm>
 #include <format>
 
 #include "element.hh"
@@ -17,20 +18,21 @@ void VideoPlayback::create() {
   LOG(INFO) << std::format("location: {}", file.data());
 
   Element filesrc = Element("filesrc", "filesrc");
-  filesrc.object_set("location", file.data());
-  pipeline.add_element(filesrc);
+  filesrc.object_set("location", file.c_str());
   auto decodeBin = Element("decodebin", "decodebin");
-  pipeline.add_element(decodeBin);
   auto converter = Element("videoconvert", "converter");
-  pipeline.add_element(converter);
   auto videosink = Element("autovideosink", "video-output");
-  pipeline.add_element(videosink);
 
   std::list<Element> elements;
+  elements.push_back(std::move(filesrc));
   elements.push_back(std::move(decodeBin));
   elements.push_back(std::move(converter));
   elements.push_back(std::move(videosink));
-  auto res = filesrc.link(elements.begin(), elements.end());
+  std::ranges::for_each(elements, [this](Element& element) {
+    pipeline.add_element(std::move(element));
+  });
+  auto& owned = pipeline.get_elements();
+  auto res = (*owned.begin())->link(++owned.begin(), owned.end());
 
   if (!res) {
     LOG(ERROR) << std::format("Linkage failed");

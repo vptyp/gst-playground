@@ -1,11 +1,10 @@
 #pragma once
-#include <thread>
-
 #include "element.hh"
 #include "gst/gstpad.h"
+#include "thread.hh"
 namespace vptyp {
 
-class AppSink : public Element {
+class AppSink : public Element, public Thread {
  public:
   AppSink(std::string_view alias);  // factory
   AppSink(AppSink&& other);
@@ -16,7 +15,7 @@ class AppSink : public Element {
 
   using SampleCallback = std::function<void(GstSample* sample)>;
   void set_sample_callback(SampleCallback callback);
-  void thread_run();
+  void sample_pull_mode();
 
  protected:
   GstFlowReturn process_sample();
@@ -24,7 +23,6 @@ class AppSink : public Element {
   void reattach_sample_callback();
 
  protected:
-  std::jthread thr;
   SampleCallback sampleCallback{nullptr};
   gulong sampleCallbackId{0};
 };

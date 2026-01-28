@@ -7,30 +7,24 @@
 namespace vptyp {
 namespace test {
 
-// Helper function to create a test pipeline with setup
-inline std::pair<GMainLoop*, vptyp::Pipeline> create_test_pipeline(
-    const std::string& name = "test-pipeline") {
-  GMainLoop* loop = g_main_loop_new(NULL, FALSE);
-  vptyp::Pipeline pipeline(*loop, name);
-  return {loop, std::move(pipeline)};
-}
-
 // Helper function to create a simple video pipeline
 inline void create_simple_video_pipeline(vptyp::Pipeline& pipeline) {
   auto src = vptyp::Element("videotestsrc", "src");
   auto sink = vptyp::Element("autovideosink", "sink");
-  pipeline.add_element(src);
-  pipeline.add_element(sink);
-  EXPECT_TRUE(src.link(sink)) << "Failed to link videotestsrc to autovideosink";
+  pipeline.add_element(std::move(src));
+  pipeline.add_element(std::move(sink));
+  EXPECT_TRUE(pipeline.get_element("src").link(pipeline.get_element("sink")))
+      << "Failed to link videotestsrc to autovideosink";
 }
 
 // Helper function to create a simple audio pipeline
 inline void create_simple_audio_pipeline(vptyp::Pipeline& pipeline) {
   auto src = vptyp::Element("audiotestsrc", "src");
   auto sink = vptyp::Element("autoaudiosink", "sink");
-  pipeline.add_element(src);
-  pipeline.add_element(sink);
-  EXPECT_TRUE(src.link(sink)) << "Failed to link audiotestsrc to autoaudiosink";
+  pipeline.add_element(std::move(src));
+  pipeline.add_element(std::move(sink));
+  EXPECT_TRUE(pipeline.get_element("src").link(pipeline.get_element("sink")))
+      << "Failed to link audiotestsrc to autoaudiosink";
 }
 
 // Helper function to run pipeline for a short duration

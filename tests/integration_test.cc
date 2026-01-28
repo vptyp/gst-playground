@@ -28,9 +28,10 @@ TEST_F(IntegrationTest, SimpleVideoPipeline) {
   vptyp::Element src("videotestsrc", "src");
   vptyp::Element sink("autovideosink", "sink");
 
-  pipeline.add_element(src);
-  pipeline.add_element(sink);
-  EXPECT_TRUE(src.link(sink)) << "Failed to link videotestsrc to autovideosink";
+  pipeline.add_element(std::move(src));
+  pipeline.add_element(std::move(sink));
+  EXPECT_TRUE(pipeline.get_element("src").link(pipeline.get_element("sink")))
+      << "Failed to link videotestsrc to autovideosink";
 
   // Run pipeline briefly
   pipeline.play();
@@ -47,9 +48,10 @@ TEST_F(IntegrationTest, SimpleAudioPipeline) {
   vptyp::Element src("audiotestsrc", "src");
   vptyp::Element sink("autoaudiosink", "sink");
 
-  pipeline.add_element(src);
-  pipeline.add_element(sink);
-  EXPECT_TRUE(src.link(sink)) << "Failed to link audiotestsrc to autoaudiosink";
+  pipeline.add_element(std::move(src));
+  pipeline.add_element(std::move(sink));
+  EXPECT_TRUE(pipeline.get_element("src").link(pipeline.get_element("sink")))
+      << "Failed to link audiotestsrc to autoaudiosink";
 
   // Run pipeline briefly
   pipeline.play();

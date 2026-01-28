@@ -40,7 +40,7 @@ TEST_F(PipelineTest, AddElementByReference) {
   vptyp::Element element("videotestsrc", "src");
   EXPECT_TRUE(element.is_initialised());
 
-  pipeline.add_element(element);
+  pipeline.add_element(std::move(element));
 }
 
 TEST_F(PipelineTest, PipelinePlaybackControl) {
@@ -49,9 +49,10 @@ TEST_F(PipelineTest, PipelinePlaybackControl) {
   vptyp::Element src("videotestsrc", "src");
   vptyp::Element sink("autovideosink", "sink");
 
-  pipeline.add_element(src);
-  pipeline.add_element(sink);
-  EXPECT_TRUE(src.link(sink)) << "Failed to link elements";
+  pipeline.add_element(std::move(src));
+  pipeline.add_element(std::move(sink));
+  EXPECT_TRUE(pipeline.get_element("src").link(pipeline.get_element("sink")))
+      << "Failed to link elements";
 
   pipeline.play();
   usleep(250000);

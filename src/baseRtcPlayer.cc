@@ -28,9 +28,9 @@ void BaseRTCPlayer::create() {
   rssink.object_set("congestion-control", 0);
   src.object_set("pattern", 18);
 
-  pipeline.add_element(src);
-  pipeline.add_element(rssink);
-  src.link(rssink);
+  pipeline.add_element(std::move(src));
+  pipeline.add_element(std::move(rssink));
+  pipeline.get_element("src").link(pipeline.get_element("sink"));
 }
 
 void BaseRTCPlayer::play() { pipeline.play(); }

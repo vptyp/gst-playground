@@ -73,9 +73,9 @@ TEST_F(AppSinkTest, GetCallback) {
 
   sink.set_sample_callback(std::move(sinkCallback));
 
-  pipeline.add_element(src);
-  pipeline.add_element(sink);
-  src.link(sink);
+  pipeline.add_element(std::move(src));
+  pipeline.add_element(std::move(sink));
+  pipeline.get_element("src").link(pipeline.get_element("sink"));
 
   playPipelineAndWait(pipeline);
 }

@@ -46,13 +46,11 @@ TEST_F(ElementTest, ValidElementCreation) {
   loggerSetup(nullptr);
   vptyp::Element element("videotestsrc", "test-src");
   EXPECT_TRUE(element.is_initialised());
-  EXPECT_FALSE(element.is_expired());
 }
 
 TEST_F(ElementTest, InvalidElementCreation) {
   vptyp::Element element("nonexistent-element", "test-src");
   EXPECT_FALSE(element.is_initialised());
-  EXPECT_FALSE(element.is_expired());
 }
 
 TEST_F(ElementTest, ElementLinking) {
@@ -83,20 +81,22 @@ TEST_F(ElementTest, ElementMoveSemantics) {
 
 TEST_F(ElementTest, DynamicPadElement) {
   vptyp::Pipeline pipeline(*loop, "heh");
-  test::Element src(loop, "videotestsrc", "testsrc");
-  test::Element decodebin(loop, "decodebin", "decodebin");
+  vptyp::Element src("videotestsrc", "testsrc");
+  vptyp::Element decodebin("decodebin", "decodebin");
   EXPECT_TRUE(decodebin.is_initialised());
 
   // decodebin has SOMETIMES pads, which should be handled correctly
-  test::Element sink(loop, "fakesink", "testsink");
+  vptyp::Element sink("fakesink", "testsink");
   EXPECT_TRUE(sink.is_initialised());
 
-  pipeline.add_element(src);
-  pipeline.add_element(decodebin);
-  pipeline.add_element(sink);
+  sink.set_caps_callback([this](GstCaps* caps) { g_main_loop_quit(loop); });
 
-  src.link(decodebin);
-  decodebin.link(sink);
+  pipeline.add_element(std::move(src));
+  pipeline.add_element(std::move(decodebin));
+  pipeline.add_element(std::move(sink));
+
+  pipeline.get_element("testsrc").link(pipeline.get_element("decodebin"));
+  pipeline.get_element("decodebin").link(pipeline.get_element("testsink"));
 
   pipeline.play();
   auto waiter = std::async(std::launch::async, [this]() {
@@ -115,22 +115,18 @@ TEST_F(ElementTest, DynamicPadElement) {
 
 TEST_F(ElementTest, DynamicPadElementMove) {
   vptyp::Pipeline pipeline(*loop, "pipeline");
-  test::Element src(loop, "videotestsrc", "testsrc");
-  test::Element decodebin(loop, "decodebin", "decodebin");
-  test::Element sink(loop, "fakesink", "testsink");
 
-  EXPECT_TRUE(decodebin.is_initialised());
+  vptyp::Element sink("fakesink", "testsink");
+  sink.set_caps_callback([this](GstCaps*) { g_main_loop_quit(loop); });
 
-  pipeline.add_element(src);
-  pipeline.add_element(decodebin);
-  pipeline.add_element(sink);
+  std::list<vptyp::Element> elements;
+  elements.push_back(vptyp::Element("videotestsrc", "testsrc"));
+  elements.push_back(vptyp::Element("decodebin", "decodebin"));
+  elements.push_back(std::move(sink));
 
-  src.link(decodebin);
-
-  // Move decodebin (the dynamic element)
-  test::Element moved_decodebin = std::move(decodebin);
-
-  moved_decodebin.link(sink);
+  pipeline.add_elements(std::move(elements));
+  pipeline.get_element("testsrc").link(pipeline.get_element("decodebin"));
+  pipeline.get_element("decodebin").link(pipeline.get_element("testsink"));
 
   pipeline.play();
 
@@ -157,9 +153,9 @@ TEST_F(ElementTest, MultipleElementLinking) {
   EXPECT_TRUE(convert.is_initialised());
   EXPECT_TRUE(sink.is_initialised());
 
-  std::list<vptyp::Element> elements;
-  elements.push_back(std::move(convert));
-  elements.push_back(std::move(sink));
+  std::list<std::unique_ptr<vptyp::Element>> elements;
+  elements.push_back(std::make_unique<vptyp::Element>(std::move(convert)));
+  elements.push_back(std::make_unique<vptyp::Element>(std::move(sink)));
 
   EXPECT_TRUE(src.link(elements.begin(), elements.end()))
       << "Failed to link chain of elements";
@@ -182,12 +178,14 @@ TEST_F(ElementTest, CapsCallback) {
     g_main_loop_quit(loop);
   });
 
-  pipeline.add_element(src);
-  pipeline.add_element(convert);
-  pipeline.add_element(sink);
+  pipeline.add_element(std::move(src));
+  pipeline.add_element(std::move(convert));
+  pipeline.add_element(std::move(sink));
 
-  ASSERT_TRUE(src.link(convert));
-  ASSERT_TRUE(convert.link(sink));
+  ASSERT_TRUE(
+      pipeline.get_element("src").link(pipeline.get_element("convert")));
+  ASSERT_TRUE(
+      pipeline.get_element("convert").link(pipeline.get_element("sink")));
 
   pipeline.play();
 
@@ -220,12 +218,14 @@ TEST_F(ElementTest, CapsCallbackMove) {
   // Move sink
   vptyp::Element moved_sink = std::move(sink);
 
-  pipeline.add_element(src);
-  pipeline.add_element(convert);
-  pipeline.add_element(moved_sink);
+  pipeline.add_element(std::move(src));
+  pipeline.add_element(std::move(convert));
+  pipeline.add_element(std::move(moved_sink));
 
-  ASSERT_TRUE(src.link(convert));
-  ASSERT_TRUE(convert.link(moved_sink));
+  ASSERT_TRUE(
+      pipeline.get_element("src").link(pipeline.get_element("convert")));
+  ASSERT_TRUE(
+      pipeline.get_element("convert").link(pipeline.get_element("sink")));
 
   pipeline.play();
 

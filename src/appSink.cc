@@ -3,23 +3,26 @@
 #include <glog/logging.h>
 #include <gst/app/gstappsink.h>
 
-#include <thread>
-
 #include "glib-object.h"
 #include "gst/gstpad.h"
 #include "src/element.hh"
 namespace vptyp {
 
-AppSink::AppSink(std::string_view alias) : Element("appsink", alias) {
+AppSink::AppSink(std::string_view alias) : Element("appsink", alias), Thread() {
   handle_sample_callback();
 }
-AppSink::AppSink(AppSink&& other) : Element(std::move(other)) {
+AppSink::AppSink(AppSink&& other)
+    : Element(std::move(other)), Thread(std::move(other)) {
   std::swap(sampleCallbackId, other.sampleCallbackId);
   std::swap(sampleCallback, other.sampleCallback);
   reattach_sample_callback();
 }
 AppSink& AppSink::operator=(AppSink&& other) {
+  if (sampleCallbackId)
+    g_signal_handler_disconnect(element.get(), sampleCallbackId);
+
   this->Element::operator=(std::move(other));
+  this->Thread::operator=(std::move(other));
   std::swap(sampleCallbackId, other.sampleCallbackId);
   std::swap(sampleCallback, other.sampleCallback);
   other.sampleCallbackId = 0;
@@ -38,9 +41,13 @@ void AppSink::set_sample_callback(SampleCallback callback) {
   sampleCallback = std::move(callback);
 }
 
-void AppSink::thread_run() {
-  thr = std::jthread([this]() {
-    while (true) {
+void AppSink::sample_pull_mode() {
+  gst_app_sink_set_emit_signals(GST_APP_SINK(element.get()), FALSE);
+  gst_app_sink_set_drop(GST_APP_SINK(element.get()), FALSE);
+  gst_app_sink_set_max_buffers(GST_APP_SINK(element.get()), 1);
+
+  thread_run([this](std::stop_token stoken) {
+    while (!stoken.stop_requested()) {
       process_sample();
     }
   });

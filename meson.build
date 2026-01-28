@@ -20,7 +20,8 @@ libsrc = [
     'src/webPlayer.cc',
     'src/pipeline.cc',
     'src/baseRtcPlayer.cc',
-    'src/appSink.cc'
+    'src/appSink.cc',
+    'src/thread.cc'
 ]
 
 deps = [

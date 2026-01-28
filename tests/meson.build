@@ -29,3 +29,7 @@ test('pipeline', element_test_exe,
 test('integration', element_test_exe, 
      args: ['--gtest_filter=IntegrationTest.*'],
      suite: 'integration')
+
+test('appsink', element_test_exe, 
+     args: ['--gtest_filter=AppSinkTest.*'],
+     suite: 'appsink')

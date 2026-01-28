@@ -16,6 +16,7 @@ bool Element::on_pad_added(GstElement* src, GstPad* new_pad,
 
   // Check if the sink is already linked (e.g., if multiple pads are found)
   if (gst_pad_is_linked(sink_pad)) {
+    LOG(INFO) << "Sink pad is already linked. Ignoring.";
     g_object_unref(sink_pad);
     return true;
   }
@@ -50,8 +51,6 @@ Element::PadTypes checkPadType(GstElement* element) {
   }
   return is_dynamic;
 }
-
-bool Element::is_expired() { return !element && owned; }
 
 bool Element::is_initialised() { return element.get(); }
 
@@ -104,17 +103,23 @@ void Element::set_caps_callback(Element::CapsCallback callback) {
   gst_object_unref(sink_pad);
 }
 
-void Element::reattach_probe() {
+void Element::remove_probe() {
   if (probeId == 0 || !element) return;
 
   GstPad* sink_pad = gst_element_get_static_pad(element.get(), "sink");
   if (sink_pad) {
-    // Remove the old probe (which triggers its destroy notify)
     gst_pad_remove_probe(sink_pad, probeId);
-
-    add_caps_probe(sink_pad);
-
     gst_object_unref(sink_pad);
+    probeId = 0;
+  }
+}
+
+void Element::reattach_probe() {
+  if (probeId == 0 || !element) return;
+  remove_probe();
+  GstPad* sink_pad = gst_element_get_static_pad(element.get(), "sink");
+  if (sink_pad) {
+    add_caps_probe(sink_pad);
   } else {
     probeId = 0;
   }
@@ -171,28 +176,26 @@ bool Element::link(Element& element) {
   return true;
 }
 
-bool Element::link(std::list<Element>::iterator begin,
-                   std::list<Element>::iterator end) {
+bool Element::link(std::list<std::unique_ptr<Element>>::iterator begin,
+                   std::list<std::unique_ptr<Element>>::iterator end) {
   if (begin == end) return true;
   auto next = std::next(begin);
 
   if (padType == PadTypes::Sometime) {
-    handle_dynamic_pad(begin->element.get());
-    return begin->link(next, end);
+    handle_dynamic_pad((*begin)->element.get());
+    return (*begin)->link(next, end);
   }
-  if (!gst_element_link(this->element.get(), begin->element.get())) {
+  if (!gst_element_link(this->element.get(), (*begin)->element.get())) {
     LOG(INFO) << std::format("Failed linkage of {} and {}", this->alias,
-                             begin->alias);
+                             (*begin)->alias);
     return false;
   }
-  return begin->link(next, end);
+  return (*begin)->link(next, end);
 }
 
 Element::Element(std::string_view element_name, std::string_view alias)
     : name(element_name), alias(alias) {
-  this->element = decltype(element)(
-      gst_element_factory_make(name.data(), alias.data()), {});
-
+  this->element = make_gst(gst_element_factory_make(name.data(), alias.data()));
   if (!this->element) {
     LOG(ERROR) << std::format("element {} was not created", element_name);
     return;
@@ -205,15 +208,10 @@ Element::Element(std::string_view element_name, std::string_view alias)
 }
 
 Element::~Element() {
-  if (owned) {
-    void* ptr = element.release();
-    (void)ptr;
-  }
-
   if (padAddedSignalId > 0)
     g_signal_handler_disconnect(element.get(), padAddedSignalId);
 
-  if (probeId > 0) g_signal_handler_disconnect(element.get(), probeId);
+  remove_probe();
 }
 
 Element::Element(Element&& other) {
@@ -221,7 +219,6 @@ Element::Element(Element&& other) {
   std::swap(name, other.name);
   std::swap(alias, other.alias);
   std::swap(padType, other.padType);
-  std::swap(owned, other.owned);
   std::swap(capsCallback, other.capsCallback);
   std::swap(probeId, other.probeId);
   std::swap(padAddedSignalId, other.padAddedSignalId);
@@ -238,18 +235,20 @@ Element::Element(Element&& other) {
 Element& Element::operator=(Element&& other) {
   if (this == &other) return *this;
 
+  if (padAddedSignalId > 0)
+    g_signal_handler_disconnect(element.get(), padAddedSignalId);
+  remove_probe();
+
   element = std::move(other.element);
   name = std::move(other.name);
   alias = std::move(other.alias);
   padType = other.padType;
-  owned = other.owned;
   capsCallback = std::move(other.capsCallback);
   probeId = other.probeId;
   padAddedSignalId = other.padAddedSignalId;
   pendingDynamicTarget = other.pendingDynamicTarget;
 
   other.padType = PadTypes::Undefined;
-  other.owned = false;
   other.probeId = 0;
   other.padAddedSignalId = 0;
   other.pendingDynamicTarget = nullptr;

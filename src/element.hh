@@ -23,7 +23,6 @@ class Element {
   virtual ~Element();
 
   bool is_initialised();
-  bool is_expired();
 
   template <typename... Args>
   void object_set(Args&&... properties);
@@ -36,8 +35,8 @@ class Element {
 
   bool link(Element& element);
 
-  bool link(std::list<Element>::iterator begin,
-            std::list<Element>::iterator end);
+  bool link(std::list<std::unique_ptr<Element>>::iterator begin,
+            std::list<std::unique_ptr<Element>>::iterator end);
 
   using CapsCallback = std::function<void(GstCaps*)>;
   void set_caps_callback(CapsCallback callback);
@@ -54,11 +53,11 @@ class Element {
   void add_caps_probe(GstPad* pad);
   void reattach_probe();
   void reattach_dynamic_pad_handler();
+  void remove_probe();
 
  protected:
   friend Pipeline;  // pipeline can access any private field
-  std::unique_ptr<GstElement, Deleter<GstElement>> element{
-      nullptr};  // non-owned access
+  std::unique_ptr<GstElement, Deleter<GstElement>> element{nullptr};
   std::string name{};
   std::string alias{};
   CapsCallback capsCallback{nullptr};
@@ -66,7 +65,6 @@ class Element {
   gulong padAddedSignalId{0};
   GstElement* pendingDynamicTarget{nullptr};
   PadTypes padType{PadTypes::Undefined};
-  bool owned{false};  // is it owned by a pipeline?
 };
 
 template <typename... Args>

@@ -26,12 +26,25 @@ void loggerSetup(char* argv[]) {
   google::LogToStderr();
 }
 
+GMainLoop* loop{nullptr};
+std::unique_ptr<vptyp::BasePlayer> player{nullptr};
+
+extern "C" void intHandler(int signum) {
+  if (loop && g_main_loop_is_running(loop)) {
+    if (player) {
+      player->stop();
+    }
+    g_main_loop_quit(loop);
+  }
+}
+
 int main(int argc, char* argv[]) {
+  signal(SIGINT, intHandler);
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   loggerSetup(argv);
   gst_init(&argc, &argv);
 
-  GMainLoop* loop = g_main_loop_new(nullptr, false);
+  loop = g_main_loop_new(nullptr, false);
 
   vptyp::Flags flags{.url = FLAGS_url,
                      .filename = FLAGS_filename,
@@ -51,8 +64,11 @@ int main(int argc, char* argv[]) {
   player->play();
   g_main_loop_run(loop);
   player->stop();
-
+  player.reset();
+  LOG(INFO) << "Exiting application";
   g_main_loop_unref(loop);
   loop = nullptr;
+  gst_deinit();
+  google::ShutdownGoogleLogging();
   return 0;
 }
